@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="A scroll-driven adaptation of Brightside Crossing by Alan E. Nourse (Galaxy Science Fiction, 1956).">
 <title>Brightside Crossing — terminal prototype</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 <style>
@@ -114,6 +115,18 @@
   body.started #start{ animation:none; opacity:0; }
   body.started #start .cta{ animation:none; }
 
+  /* atrybucja zrodla: ta sama typografia na karcie wstepnej i w outro */
+  .src{ font-family:'Courier New',monospace; font-size:.66rem; line-height:1.85;
+    letter-spacing:.1em; color:#6d7d97; }
+  #start .src{ margin-top:1.8rem; }
+  #outro .src{ margin-top:2.6rem; }
+  .src em{ font-style:italic; color:#8b9cb5; }
+  .src a{ color:#8b9cb5; text-decoration:underline; text-underline-offset:3px;
+    text-decoration-color:rgba(139,156,181,.45); transition:color .2s; }
+  .src a:hover{ color:#e8b45c; text-decoration-color:#e8b45c; }
+  /* outro jako calosc nie lapie kursora (zeby nie blokowac scrolla) — tylko link */
+  body.showoutro #outro .src a{ pointer-events:auto; }
+
   @media (prefers-reduced-motion: reduce){ html{ scroll-behavior:auto; } .line{ animation:none; opacity:1; } #screen{ animation:none; } #start{ animation:none; opacity:1; } }
 </style>
 </head>
@@ -137,6 +150,9 @@
   <div id="outro"><div class="box">
     <div class="k">Red Lion · Earth</div>
     <div class="q">“When do you leave, Baron?<br>I want you to take me along.”</div>
+    <div class="src">Adapted from <em>Brightside Crossing</em> by Alan E. Nourse,<br>
+      first published in <em>Galaxy Science Fiction</em>, January 1956. Public domain.<br>
+      <a href="https://www.gutenberg.org/files/49165/49165-h/49165-h.htm" target="_blank" rel="noopener">Read the original at Project Gutenberg &rarr;</a></div>
   </div></div>
 
   <div id="track"></div>
@@ -147,9 +163,10 @@
     <div class="t">Four men set out to cross the sunward face of Mercury at perihelion.
       Peter Claney came back alone.
       Tonight another crossing is being planned, and Claney has come to talk the man out of it.</div>
+    <div class="src">An adaptation of &ldquo;Brightside Crossing&rdquo;<br>by Alan E. Nourse &middot; <em>Galaxy Science Fiction</em>, 1956</div>
     <div class="cta">click, then scroll</div>
   </div></div>
-  <div class="note">PROTOTYPE — click to begin, scroll to cross. Text: public-domain (Galaxy, 1956).</div>
+  <div class="note">PROTOTYPE — click to begin, scroll to cross.</div>
 
 <script>
 /* ---------------- visuals + terminal ---------------- */
