@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Brightside Crossing — terminal prototype</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+<style>
+  :root{ --amber:#ffb545; --amber-dim:#ffcf85; }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html{ scroll-behavior:smooth; }
+  body{ font-family:Georgia, serif; background:#05060d; color:#f4ece0; }
+
+  /* ---- fixed sky + sun ---- */
+  #sky{ position:fixed; inset:0; z-index:-3; background:#0b1026; transition:background .09s linear; }
+  #haze{ position:fixed; inset:0; z-index:-1; pointer-events:none;
+    background:linear-gradient(180deg, rgba(200,170,60,0) 40%, rgba(190,150,40,.18) 100%);
+    mix-blend-mode:screen; opacity:0; transition:opacity .3s linear; }
+  #sun{ position:fixed; left:50%; top:22vh; z-index:-2; width:80px; height:80px; border-radius:50%;
+    transform:translate(-50%,-50%);
+    background:radial-gradient(circle at 50% 50%, #fff 0%, #fff2c0 30%, #ffcf6b 55%, rgba(255,180,80,0) 72%);
+    filter:brightness(1); opacity:1; transition:opacity .08s linear;
+    will-change:width,height,filter,top,opacity; }
+  #vignette{ position:fixed; inset:0; z-index:-1; pointer-events:none; box-shadow:inset 0 0 220px 60px rgba(0,0,0,.55); }
+
+  /* ---- the CRT terminal (fixed; only its text scrolls) ---- */
+  #crt{ position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); z-index:2;
+    width:min(720px, 92vw); height:min(62vh, 540px); transition:opacity .5s; }
+  #screen{ position:relative; width:100%; height:100%; overflow:hidden;
+    display:flex; flex-direction:column; padding:1.3rem 1.5rem;
+    background:radial-gradient(130% 130% at 50% 35%, rgba(30,17,3,.95), rgba(6,4,2,.96));
+    border-radius:14px; border:1px solid rgba(255,180,70,.28);
+    box-shadow:0 0 70px rgba(255,150,40,.14), inset 0 0 90px rgba(0,0,0,.6);
+    color:var(--amber); font-family:'Courier New', monospace;
+    text-shadow:0 0 6px rgba(255,150,40,.55);
+    animation:flick 6s infinite steps(60); }
+  @keyframes flick{ 0%,97%,100%{opacity:1;} 98%{opacity:.92;} 99%{opacity:.97;} }
+  #titlebar{ display:flex; justify-content:space-between; align-items:center;
+    font-size:.66rem; letter-spacing:.2em; text-transform:uppercase; color:var(--amber-dim); opacity:.85;
+    border-bottom:1px solid rgba(255,180,70,.22); padding-bottom:.6rem; margin-bottom:.9rem; }
+  #stat{ color:#ff7a3c; }
+  #stat::before{ content:"● "; }
+  #log{ flex:1; overflow:hidden; font-size:1.02rem; line-height:1.5; }
+  .line{ margin-bottom:1.05rem; opacity:0; animation:fadein .35s forwards; }
+  @keyframes fadein{ to{opacity:1;} }
+  .tag{ font-size:.66rem; letter-spacing:.1em; color:var(--amber-dim); opacity:.7; margin-bottom:.3rem; }
+  .tx{ color:var(--amber); }
+  #cursorline{ display:flex; align-items:center; gap:.5rem; color:var(--amber-dim); font-size:1.02rem; }
+  .cursor{ display:inline-block; width:.55ch; height:1.05em; background:var(--amber);
+    box-shadow:0 0 8px rgba(255,150,40,.7); animation:blink 1s steps(1) infinite; }
+  @keyframes blink{ 50%{opacity:0;} }
+  #scan{ position:absolute; inset:0; z-index:3; pointer-events:none; border-radius:14px;
+    background:repeating-linear-gradient(180deg, rgba(0,0,0,0) 0, rgba(0,0,0,0) 2px, rgba(0,0,0,.16) 3px, rgba(0,0,0,0) 4px);
+    mix-blend-mode:multiply; }
+  #off{ position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+    color:rgba(255,90,40,.55); letter-spacing:.35em; font-family:'Courier New',monospace; font-size:.8rem; }
+
+  /* power-down at the cut: screen goes black, everything dies at once */
+  #crt.off #screen{ background:#000; border-color:rgba(255,120,40,.08);
+    box-shadow:0 0 26px rgba(0,0,0,.85); text-shadow:none; animation:none; }
+  #crt.off #titlebar, #crt.off #log, #crt.off #cursorline, #crt.off #scan{ opacity:0; transition:opacity .07s; }
+  #crt.off #off{ display:flex; }
+
+  /* cold return to the Red Lion, printed after the blackout */
+  #outro{ position:fixed; inset:0; z-index:4; display:flex; align-items:center; justify-content:center;
+    padding:8vw; opacity:0; transition:opacity 1.1s; pointer-events:none; }
+  #outro .box{ max-width:560px; text-align:center; color:#9fb0c9; }
+  #outro .k{ font-family:'Courier New',monospace; font-size:.68rem; letter-spacing:.28em;
+    text-transform:uppercase; color:#6d7d97; margin-bottom:1.2rem; }
+  #outro .q{ font-size:1.5rem; font-style:italic; line-height:1.5; }
+  body.showoutro #outro{ opacity:1; }
+  body.showoutro #crt{ opacity:0; }
+
+  /* invisible scroll track — gives the crossing its length */
+  #track{ height:780vh; }
+
+  /* controls */
+  #sound{ position:fixed; left:14px; bottom:14px; z-index:10;
+    font-family:'Courier New',monospace; font-size:.68rem; letter-spacing:.18em; text-transform:uppercase; color:#f4ece0;
+    background:rgba(8,8,16,.55); border:1px solid rgba(255,255,255,.22); border-radius:20px; padding:.55rem 1rem; cursor:pointer;
+    backdrop-filter:blur(3px); transition:background .2s,border-color .2s; }
+  #sound:hover{ background:rgba(30,20,10,.7); border-color:rgba(232,180,92,.6); }
+  #sound .dot{ color:#e8b45c; } #sound.on .dot{ color:#ff7a3c; }
+  .note{ position:fixed; left:0; right:0; bottom:0; z-index:5; text-align:center;
+    font-family:'Courier New',monospace; font-size:.6rem; letter-spacing:.12em; color:rgba(255,255,255,.35);
+    padding:.5rem; pointer-events:none; }
+
+  @media (max-width:600px){ #log{ font-size:.92rem; } #crt{ height:70vh; } }
+  /* przed pierwszym gestem terminal jest martwy */
+  body:not(.started) #titlebar,
+  body:not(.started) #cursorline{ opacity:0; }
+  #titlebar, #cursorline{ transition:opacity .45s .15s; }
+
+  /* przed pierwszym gestem: czern Red Lion, zaden Merkury, martwy terminal.
+     Scroll jest zablokowany, bo nie ma jeszcze czego przewijac.             */
+  html:not(.started), html:not(.started) body{ overflow:hidden; }
+  body:not(.started) #crt{ opacity:0; }
+  body:not(.started) #sun{ opacity:0 !important; }
+  body:not(.started) #haze{ opacity:0 !important; }
+  body:not(.started) #sky{ background:#05060d !important; }
+  #sky{ transition:background .09s linear, background-color .9s linear; }
+
+  /* karta wstepna: ten sam krój co outro, zeby byly para */
+  #start{ position:fixed; inset:0; z-index:5; display:flex; align-items:center; justify-content:center;
+    padding:8vw; pointer-events:none; transition:opacity .5s; }
+  #start .box{ max-width:560px; text-align:center; color:#9fb0c9; }
+  #start .k{ font-family:'Courier New',monospace; font-size:.68rem; letter-spacing:.28em;
+    text-transform:uppercase; color:#6d7d97; margin-bottom:1.2rem; }
+  #start .t{ font-size:1.15rem; line-height:1.7; }
+  #start .cta{ margin-top:2.4rem; font-family:'Courier New',monospace; font-size:.68rem;
+    letter-spacing:.28em; text-transform:uppercase; color:#6d7d97;
+    animation:pulse 2.6s ease-in-out infinite; }
+  @keyframes pulse{ 0%,100%{opacity:.45;} 50%{opacity:1;} }
+  body.started #start{ animation:none; opacity:0; }
+  body.started #start .cta{ animation:none; }
+
+  @media (prefers-reduced-motion: reduce){ html{ scroll-behavior:auto; } .line{ animation:none; opacity:1; } #screen{ animation:none; } #start{ animation:none; opacity:1; } }
+</style>
+</head>
+<body>
+
+  <div id="sky"></div>
+  <div id="haze"></div>
+  <div id="sun"></div>
+  <div id="vignette"></div>
+
+  <div id="crt">
+    <div id="screen">
+      <div id="titlebar"><span>Brightside Crossing — expedition log</span><span id="stat">REC</span></div>
+      <div id="log" aria-live="polite"></div>
+      <div id="cursorline"><span>&gt;</span><span class="cursor"></span></div>
+      <div id="off">— signal lost —</div>
+    </div>
+    <div id="scan"></div>
+  </div>
+
+  <div id="outro"><div class="box">
+    <div class="k">Red Lion · Earth</div>
+    <div class="q">“When do you leave, Baron?<br>I want you to take me along.”</div>
+  </div></div>
+
+  <div id="track"></div>
+
+  <button id="sound" aria-pressed="true" class="on"><span class="dot">◉</span>&nbsp; Sound on</button>
+  <div id="start"><div class="box">
+    <div class="k">Red Lion · Earth</div>
+    <div class="t">Four men set out to cross the sunward face of Mercury at perihelion.
+      Peter Claney came back alone.
+      Tonight another crossing is being planned, and Claney has come to talk the man out of it.</div>
+    <div class="cta">click, then scroll</div>
+  </div></div>
+  <div class="note">PROTOTYPE — click to begin, scroll to cross. Text: public-domain (Galaxy, 1956).</div>
+
+<script>
+/* ---------------- visuals + terminal ---------------- */
+(function(){
+  var sky=document.getElementById('sky'), sun=document.getElementById('sun'),
+      haze=document.getElementById('haze'), crt=document.getElementById('crt'),
+      log=document.getElementById('log');
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  var WHITE0=0.72, WHITE1=0.87, CUT=0.90, OUTRO=0.95;
+
+  var stops=[
+    {p:0.00,c:[11,16,38]},{p:0.12,c:[20,22,52]},{p:0.30,c:[74,42,60]},
+    {p:0.48,c:[150,66,26]},{p:0.64,c:[205,92,27]},{p:0.78,c:[242,150,50]},{p:0.88,c:[255,252,242]}
+  ];
+  var sizeStops=[{p:0,v:70},{p:0.12,v:90},{p:0.30,v:180},{p:0.48,v:320},{p:0.64,v:560},{p:0.80,v:900},{p:0.88,v:1050}];
+
+  function lerp(a,b,t){return a+(b-a)*t;}
+  function clamp(x){return Math.max(0,Math.min(1,x));}
+  function colorAt(p){ for(var i=0;i<stops.length-1;i++){var a=stops[i],b=stops[i+1];
+    if(p>=a.p&&p<=b.p){var t=(p-a.p)/(b.p-a.p);return [lerp(a.c[0],b.c[0],t),lerp(a.c[1],b.c[1],t),lerp(a.c[2],b.c[2],t)];}}
+    return stops[stops.length-1].c.slice(); }
+  function mix(a,b,t){return [lerp(a[0],b[0],t),lerp(a[1],b[1],t),lerp(a[2],b[2],t)];}
+  function rgb(a){return 'rgb('+Math.round(a[0])+','+Math.round(a[1])+','+Math.round(a[2])+')';}
+  function sampleVal(p,arr){ for(var i=0;i<arr.length-1;i++){var a=arr[i],b=arr[i+1];
+    if(p>=a.p&&p<=b.p){return lerp(a.v,b.v,(p-a.p)/(b.p-a.p));}} return arr[arr.length-1].v; }
+
+  // expedition log entries, placed along the crossing
+  var beats=[
+    {p:0.00, tag:'> brightside crossing :: a. e. nourse, 1956',
+     text:'"No human beings will ever cross the Brightside alive."'},
+    {p:0.14, tag:'> twilight lab :: jump-off',
+     text:'The Sun was already huge and yellow over the horizon — twice the size it appears on Earth.'},
+    {p:0.30, tag:'> day 04 :: into virgin territory',
+     text:"We didn't feel the heat so much those first days out. We saw it."},
+    {p:0.46, tag:'> day 09 :: 547°F and climbing',
+     text:'An inch of fiberglass between us and a surface where lead flowed like water.'},
+    {p:0.62, tag:'> a wreck in the gorge',
+     text:'Two insulated suits — white bones gleaming through the helmets. As far as Wyatt and Carpenter got.'},
+    {p:0.80, tag:'> center :: perihelion :: 770°F',
+     text:'The hottest place in the Solar System, with one single exception: the surface of the Sun itself.'}
+  ];
+
+  // ---- terminal printing (screen fixed, text scrolls inside) ----
+  var shown=0, typing=false, typeTimer=null;
+  function addInstant(b){
+    var line=document.createElement('div'); line.className='line';
+    line.innerHTML='<div class="tag"></div><div class="tx"></div>';
+    line.querySelector('.tag').textContent=b.tag;
+    line.querySelector('.tx').textContent=b.text;
+    log.appendChild(line);
+  }
+  function typeLine(b, cb){
+    var line=document.createElement('div'); line.className='line';
+    line.innerHTML='<div class="tag"></div><div class="tx"></div>';
+    line.querySelector('.tag').textContent=b.tag;
+    var tx=line.querySelector('.tx'); log.appendChild(line);
+    var i=0, s=b.text;
+    (function step(){
+      tx.textContent=s.slice(0,i); log.scrollTop=log.scrollHeight; i++;
+      if(i<=s.length){ typeTimer=setTimeout(step, 15); } else { cb&&cb(); }
+    })();
+  }
+  function rebuild(target){
+    if(typeTimer){ clearTimeout(typeTimer); typeTimer=null; }
+    typing=false; log.innerHTML='';
+    for(var i=0;i<target;i++) addInstant(beats[i]);
+    shown=target; log.scrollTop=log.scrollHeight;
+  }
+  function syncTerminal(p){
+    if(!window.__started){                      // terminal spi do pierwszego gestu
+      if(shown||typing){ rebuild(0); }
+      return;
+    }
+    var target=0; for(var i=0;i<beats.length;i++){ if(p>=beats[i].p) target=i+1; }
+    if(target<shown){ rebuild(target); return; }
+    if(typing) return;
+    if(target>shown){
+      if(target-shown>1){ addInstant(beats[shown]); shown++; }       // catch up fast
+      else { typing=true; typeLine(beats[shown], function(){ shown++; typing=false; }); }
+      log.scrollTop=log.scrollHeight;
+    }
+  }
+
+  var ticking=false;
+  function render(){
+    var max=document.documentElement.scrollHeight-window.innerHeight;
+    var p=max>0?clamp(window.scrollY/max):0; window.__p=p;
+    var whiteT=clamp((p-WHITE0)/(WHITE1-WHITE0));
+    window.__app=whiteT;
+    var cut=p>=CUT; window.__cut=cut;
+
+    if(cut){
+      sky.style.background='#000000'; sun.style.opacity='0'; haze.style.opacity='0';
+      crt.classList.add('off');
+      document.body.classList.toggle('showoutro', p>=OUTRO);
+      ticking=false; return;
+    }
+    crt.classList.remove('off'); document.body.classList.remove('showoutro');
+    sun.style.opacity='1';
+    var col=colorAt(p), s=sampleVal(p,sizeStops);
+    if(whiteT>0){ col=mix(col,[255,255,255],whiteT); s=lerp(s,1120,whiteT); }
+    sky.style.background=rgb(col);
+    sun.style.width=s+'px'; sun.style.height=s+'px';
+    sun.style.filter='brightness('+(1+p*1.4)+')';
+    sun.style.top=(22-p*5)+'vh';
+    haze.style.opacity=Math.min(1,p*1.2).toFixed(2);
+    syncTerminal(p);
+    ticking=false;
+  }
+  function onScroll(){ if(!ticking){ ticking=true; requestAnimationFrame(render); } }
+
+  if(!reduce){
+    window.addEventListener('scroll', onScroll, {passive:true});
+    window.addEventListener('resize', render);
+    window.__boot = render;                    // wywolywane przy pierwszym gescie
+    render();
+  } else {
+    sky.style.background=rgb(colorAt(0.5)); sun.style.width='260px'; sun.style.height='260px'; haze.style.opacity='.5';
+    window.__boot = function(){ if(!log.children.length) beats.forEach(addInstant); };
+  }
+  window.__p=0; window.__app=0; window.__cut=false; window.__started=false;
+})();
+
+/* ---------------- scroll-reactive procedural audio ---------------- */
+(function(){
+  var btn=document.getElementById('sound');
+  var built=false, enabled=false, updater=null;
+  var master, filter, detune, whineGain, tritoneGain, clashGain, whineOsc;
+  function clamp(x){return Math.max(0,Math.min(1,x));}
+
+  function build(){
+    var out=new Tone.Limiter(-1).toDestination();
+    var reverb=new Tone.Reverb({decay:9, wet:0.4}).connect(out);
+    var breathGain=new Tone.Gain(1).connect(reverb);
+    master=new Tone.Gain(0).connect(breathGain);
+    filter=new Tone.Filter(180,"lowpass").connect(master); filter.Q.value=0.7;
+    var root=55;
+    var oscA=new Tone.Oscillator(root,"sine").connect(filter);
+    detune=new Tone.Signal(0);
+    var oscAb=new Tone.Oscillator(root,"sine").connect(filter); detune.connect(oscAb.detune);
+    var oscFifth=new Tone.Oscillator(root*1.5,"sine").connect(filter); oscFifth.volume.value=-6;
+    var tritone=new Tone.Oscillator(root*Math.pow(2,6/12),"triangle");
+    tritoneGain=new Tone.Gain(0); tritone.connect(tritoneGain); tritoneGain.connect(filter);
+    var clash=new Tone.Oscillator(root*Math.pow(2,1/12),"sawtooth");
+    clashGain=new Tone.Gain(0); clash.connect(clashGain); clashGain.connect(filter);
+    whineOsc=new Tone.Oscillator(2600,"sine"); whineGain=new Tone.Gain(0);
+    whineOsc.connect(whineGain); whineGain.connect(master);
+    new Tone.LFO(0.15,-8,8).start().connect(whineOsc.detune);
+    new Tone.LFO({frequency:0.06,min:0.8,max:1.0}).start().connect(breathGain.gain);
+    [oscA,oscAb,oscFifth,tritone,clash,whineOsc].forEach(function(o){o.start();});
+    built=true;
+  }
+  function loop(){
+    var p=window.__p||0, app=window.__app||0;
+    var heat=clamp((p-0.30)/0.58), climax=clamp((app-0.45)/0.55);
+    if(window.__cut){
+      master.gain.rampTo(0,0.05); whineGain.gain.rampTo(0,0.04);
+      tritoneGain.gain.rampTo(0,0.04); clashGain.gain.rampTo(0,0.04);
+      detune.rampTo(0,0.15); filter.frequency.rampTo(160,0.1); return;
+    }
+    master.gain.rampTo(enabled?(0.15+heat*0.12+climax*0.30):0, 0.18);
+    filter.frequency.rampTo(180+heat*4000+climax*3600, 0.16);
+    detune.rampTo(heat*20+climax*48, 0.22);
+    whineGain.gain.rampTo(enabled?(heat*0.04+climax*0.12):0, 0.22);
+    if(whineOsc) whineOsc.frequency.rampTo(2600+climax*1600, 0.22);
+    tritoneGain.gain.rampTo(clamp((p-0.6)/0.2)*0.05+climax*0.11, 0.22);
+    clashGain.gain.rampTo(climax*0.10, 0.22);
+  }
+  async function enable(){
+    await Tone.start(); if(!built) build();
+    enabled=true; btn.classList.add('on'); btn.setAttribute('aria-pressed','true');
+    btn.innerHTML='<span class="dot">◉</span>&nbsp; Sound on';
+    if(!updater) updater=setInterval(loop,140); loop();
+  }
+  function disable(){
+    enabled=false; btn.classList.remove('on'); btn.setAttribute('aria-pressed','false');
+    btn.innerHTML='<span class="dot">◍</span>&nbsp; Sound off';
+    if(master) master.gain.rampTo(0,0.4);
+  }
+  /* --- dzwiek wlaczony domyslnie ---
+     Przegladarki blokuja audio do pierwszego gestu uzytkownika, wiec przycisk
+     startuje w stanie "on", a sciezka rusza sama przy pierwszym kliknieciu,
+     dotknieciu lub nacisnieciu klawisza gdziekolwiek na stronie.            */
+  var armed = true, starting = false;
+  btn.classList.add('on');
+  btn.setAttribute('aria-pressed','true');
+  btn.innerHTML='<span class="dot">◉</span>&nbsp; Sound on';
+
+  var GESTY = ['pointerdown','touchstart','keydown'];
+  function odepnij(){
+    document.body.classList.add('started');
+    document.documentElement.classList.add('started');   // odblokowuje scroll
+    window.__started = true;
+    window.scrollTo(0,0);                                // zawsze zaczynamy od zera
+    if (window.__boot) window.__boot();                  // budzi terminal
+    GESTY.forEach(function(e){ window.removeEventListener(e, pierwszyGest, true); });
+  }
+  function pierwszyGest(ev){
+    if (btn.contains(ev.target)) return;   // przycisk ma wlasna obsluge
+    odepnij();
+    if (armed && !enabled && !starting){ starting = true; enable().finally(function(){ starting=false; }); }
+  }
+  GESTY.forEach(function(e){ window.addEventListener(e, pierwszyGest, true); });
+
+  btn.addEventListener('click', function(){
+    odepnij();
+    if (enabled || starting){ armed = false; disable(); }
+    else { armed = true; starting = true; enable().finally(function(){ starting=false; }); }
+  });
+})();
+</script>
+</body>
+</html>
